@@ -13,14 +13,16 @@ export async function setImplemented(id: number, implemented: boolean) {
 }
 
 export async function retryProcessing(id: number) {
-  await processItem(id);
+  // processItem already records failures on the item (status/processingError);
+  // don't let a rejected AI/network call blow up the form submission on top of that.
+  await processItem(id).catch(() => {});
   revalidatePath("/");
   revalidatePath(`/items/${id}`);
 }
 
 export async function saveNote(id: number, note: string) {
   await db.update(items).set({ userNote: note, updatedAt: new Date() }).where(eq(items.id, id));
-  await processItem(id);
+  await processItem(id).catch(() => {});
   revalidatePath("/");
   revalidatePath(`/items/${id}`);
 }

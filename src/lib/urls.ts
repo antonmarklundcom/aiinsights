@@ -11,28 +11,37 @@ export function extractUrls(text: string): string[] {
 export function detectPlatform(url: string): Platform {
   const host = safeHost(url);
   if (!host) return "other";
-  if (host.includes("instagram.com")) return "instagram";
-  if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+  if (isHostOrSubdomain(host, "instagram.com")) return "instagram";
+  if (isHostOrSubdomain(host, "youtube.com") || isHostOrSubdomain(host, "youtu.be")) return "youtube";
   return "other";
 }
 
+const REPO_HOSTS = ["github.com", "gitlab.com", "sourceforge.net", "bitbucket.org"];
+
 export function detectRepoUrl(text: string): string | null {
   const urls = extractUrls(text);
-  const repoHosts = ["github.com", "gitlab.com", "sourceforge.net", "bitbucket.org"];
-  for (const u of urls) {
-    const host = safeHost(u);
-    if (host && repoHosts.some((h) => host.includes(h))) return u;
-  }
-  return null;
+  return urls.find(isRepoUrl) ?? null;
+}
+
+export function isRepoUrl(url: string): boolean {
+  const host = safeHost(url);
+  return Boolean(host && REPO_HOSTS.some((h) => isHostOrSubdomain(host, h)));
+}
+
+/** True if `host` is exactly `domain` or a proper subdomain of it (not merely
+ * a substring — avoids e.g. "notinstagram.com.evil.tld" matching "instagram.com"). */
+function isHostOrSubdomain(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
 }
 
 export function extractYoutubeVideoId(url: string): string | null {
   try {
     const u = new URL(url);
-    if (u.hostname.includes("youtu.be")) {
+    const host = u.hostname.replace(/^www\./, "");
+    if (isHostOrSubdomain(host, "youtu.be")) {
       return u.pathname.slice(1) || null;
     }
-    if (u.hostname.includes("youtube.com")) {
+    if (isHostOrSubdomain(host, "youtube.com")) {
       if (u.pathname === "/watch") return u.searchParams.get("v");
       const shortsMatch = u.pathname.match(/\/(shorts|embed)\/([^/?]+)/);
       if (shortsMatch) return shortsMatch[2];
@@ -51,8 +60,10 @@ function safeHost(url: string): string | null {
   }
 }
 
-/** Pull the primary content URL (IG/YouTube link) out of a forwarded Telegram message,
- * separate from any other links (e.g. a repo link) mentioned alongside it. */
+/** Pull the primary content URL out of a forwarded Telegram message. Prefers an
+ * Instagram/YouTube link if present, but falls back to whatever link IS there
+ * (a bare GitHub repo, a Notion doc, an article, ...) so nothing gets silently
+ * dropped just because it isn't a video platform link. */
 export function pickPrimaryContentUrl(urls: string[]): string | null {
   const priority: Platform[] = ["instagram", "youtube"];
   for (const p of priority) {
@@ -60,4 +71,31 @@ export function pickPrimaryContentUrl(urls: string[]): string | null {
     if (found) return found;
   }
   return urls[0] ?? null;
+}
+
+const TRACKING_PARAMS = [
+  /^utm_/i,
+  /^fbclid$/i,
+  /^gclid$/i,
+  /^igsh$/i,
+  /^igshid$/i,
+  /^igsi$/i,
+  /^mc_[a-z]+$/i,
+  /^ref_?src$/i,
+  /^ref$/i,
+];
+
+/** Strips common tracking query params (fbclid, utm_*, igsi/igshid, ...) so
+ * saved URLs stay clean and dedupe-friendly. Leaves the URL untouched (rather
+ * than throwing) if it doesn't parse. */
+export function stripTrackingParams(url: string): string {
+  try {
+    const u = new URL(url);
+    for (const key of [...u.searchParams.keys()]) {
+      if (TRACKING_PARAMS.some((re) => re.test(key))) u.searchParams.delete(key);
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
 }

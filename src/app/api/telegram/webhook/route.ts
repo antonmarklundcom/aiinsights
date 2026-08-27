@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { desc, eq, and } from "drizzle-orm";
 import { db } from "@/db";
 import { items, type Item } from "@/db/schema";
-import { detectPlatform, detectRepoUrl, extractUrls, pickPrimaryContentUrl } from "@/lib/urls";
+import {
+  detectPlatform,
+  detectRepoUrl,
+  extractUrls,
+  isRepoUrl,
+  pickPrimaryContentUrl,
+  stripTrackingParams,
+} from "@/lib/urls";
 import { sendTelegramMessage, type TelegramUpdate } from "@/lib/telegram";
 import { processItem } from "@/lib/process-item";
 
@@ -39,12 +46,18 @@ export async function POST(req: NextRequest) {
   }
 
   const allUrls = extractUrls(text);
-  const contentUrl = pickPrimaryContentUrl(
-    allUrls.filter((u) => detectPlatform(u) !== "other")
-  );
+  // Prefer an Instagram/YouTube link, but fall back to whatever link IS
+  // there — a bare GitHub repo, a Notion doc, an article — so a message
+  // with no video-platform link doesn't just get silently dropped.
+  const contentUrl = pickPrimaryContentUrl(allUrls);
 
   if (contentUrl) {
-    const repoUrl = detectRepoUrl(text.replace(contentUrl, ""));
+    const cleanContentUrl = stripTrackingParams(contentUrl);
+    // If the content link itself is a repo (shared with no separate IG/YT
+    // link), treat it as its own repo too so the README still gets fetched.
+    const repoUrl = isRepoUrl(contentUrl)
+      ? cleanContentUrl
+      : detectRepoUrl(text.replace(contentUrl, ""));
     const noteText = allUrls
       .reduce((t, u) => t.replace(u, ""), text)
       .trim();
@@ -52,7 +65,7 @@ export async function POST(req: NextRequest) {
     const [created] = await db
       .insert(items)
       .values({
-        url: contentUrl,
+        url: cleanContentUrl,
         platform: detectPlatform(contentUrl),
         userNote: noteText || null,
         repoUrl: repoUrl,
@@ -121,7 +134,8 @@ function formatReply(item: Item, needsNote: boolean): string {
   const lines = [`<b>${escapeHtml(item.title ?? "Saved item")}</b>`];
   if (item.category) lines.push(`<i>${escapeHtml(item.category)}</i>`);
   if (item.summary) lines.push("", escapeHtml(item.summary));
-  if (item.tags?.length) lines.push("", item.tags.map((t) => `#${t.replace(/\s+/g, "_")}`).join(" "));
+  if (item.tags?.length)
+    lines.push("", item.tags.map((t) => `#${escapeHtml(t.replace(/\s+/g, "_"))}`).join(" "));
   if (item.howToStart?.length) {
     lines.push("", "<b>Get started:</b>");
     item.howToStart.forEach((step, i) => lines.push(`${i + 1}. ${escapeHtml(step)}`));

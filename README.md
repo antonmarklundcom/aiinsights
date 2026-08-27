@@ -14,10 +14,16 @@ web dashboard.
    gather content:
    - YouTube: video title (oEmbed) + captions/transcript (public caption track,
      no API key needed).
-   - Instagram: best-effort `og:title`/`og:description` scrape (Instagram often
-     blocks this — that's expected and handled).
-   - If a GitHub/GitLab/etc. link is mentioned in the message, its README is
-     fetched too and used to ground the summary.
+   - Instagram, and anything else (a Notion doc, an article, a bare repo
+     link — whatever you actually forward): best-effort `og:title`/
+     `og:description` scrape. Instagram often blocks this — that's expected
+     and handled. The bot isn't picky about the link being Instagram/YouTube
+     specifically; it saves whatever link is in the message.
+   - If a GitHub/GitLab/etc. link is mentioned in the message (either as the
+     saved link itself, or alongside it — e.g. an IG Reel about a repo), its
+     README is fetched too and used to ground the summary.
+   - Tracking params (`fbclid`, `utm_*`, `igsi`/`igshid`, ...) are stripped
+     from saved URLs.
 3. **Fallback** — if none of the above produced anything (common for Instagram
    Reels with no caption), the bot asks you to reply with a quick note
    ("repo that turns screenshots into React components"). Your next text reply
