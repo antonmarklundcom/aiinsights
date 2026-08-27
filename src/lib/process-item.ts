@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { items, type Item } from "@/db/schema";
 import { fetchYoutubeMeta } from "./youtube";
-import { fetchInstagramMeta } from "./instagram";
+import { fetchPageMeta } from "./page-meta";
 import { fetchRepoReadme } from "./github";
 import { summarizeItem } from "./summarize";
 
@@ -28,10 +28,13 @@ export async function processItem(itemId: number): Promise<ProcessResult> {
       const meta = await fetchYoutubeMeta(item.url);
       title = title ?? meta.title;
       transcript = transcript ?? meta.transcript;
-    } else if (item.platform === "instagram") {
-      const meta = await fetchInstagramMeta(item.url);
+    } else {
+      // Instagram (blocked more often than not) and anything else — a bare
+      // GitHub repo link, a Notion doc, an article — get the same best-effort
+      // og:title/og:description scrape.
+      const meta = await fetchPageMeta(item.url);
       title = title ?? meta.title;
-      caption = caption ?? meta.caption;
+      caption = caption ?? meta.description;
     }
 
     let repoReadme = item.repoReadme;
