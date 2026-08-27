@@ -37,10 +37,11 @@ function isHostOrSubdomain(host: string, domain: string): boolean {
 export function extractYoutubeVideoId(url: string): string | null {
   try {
     const u = new URL(url);
-    if (u.hostname.includes("youtu.be")) {
+    const host = u.hostname.replace(/^www\./, "");
+    if (isHostOrSubdomain(host, "youtu.be")) {
       return u.pathname.slice(1) || null;
     }
-    if (u.hostname.includes("youtube.com")) {
+    if (isHostOrSubdomain(host, "youtube.com")) {
       if (u.pathname === "/watch") return u.searchParams.get("v");
       const shortsMatch = u.pathname.match(/\/(shorts|embed)\/([^/?]+)/);
       if (shortsMatch) return shortsMatch[2];
