@@ -121,7 +121,8 @@ function formatReply(item: Item, needsNote: boolean): string {
   const lines = [`<b>${escapeHtml(item.title ?? "Saved item")}</b>`];
   if (item.category) lines.push(`<i>${escapeHtml(item.category)}</i>`);
   if (item.summary) lines.push("", escapeHtml(item.summary));
-  if (item.tags?.length) lines.push("", item.tags.map((t) => `#${t.replace(/\s+/g, "_")}`).join(" "));
+  if (item.tags?.length)
+    lines.push("", item.tags.map((t) => `#${escapeHtml(t.replace(/\s+/g, "_"))}`).join(" "));
   if (item.howToStart?.length) {
     lines.push("", "<b>Get started:</b>");
     item.howToStart.forEach((step, i) => lines.push(`${i + 1}. ${escapeHtml(step)}`));

@@ -11,8 +11,8 @@ export function extractUrls(text: string): string[] {
 export function detectPlatform(url: string): Platform {
   const host = safeHost(url);
   if (!host) return "other";
-  if (host.includes("instagram.com")) return "instagram";
-  if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+  if (isHostOrSubdomain(host, "instagram.com")) return "instagram";
+  if (isHostOrSubdomain(host, "youtube.com") || isHostOrSubdomain(host, "youtu.be")) return "youtube";
   return "other";
 }
 
@@ -21,9 +21,15 @@ export function detectRepoUrl(text: string): string | null {
   const repoHosts = ["github.com", "gitlab.com", "sourceforge.net", "bitbucket.org"];
   for (const u of urls) {
     const host = safeHost(u);
-    if (host && repoHosts.some((h) => host.includes(h))) return u;
+    if (host && repoHosts.some((h) => isHostOrSubdomain(host, h))) return u;
   }
   return null;
+}
+
+/** True if `host` is exactly `domain` or a proper subdomain of it (not merely
+ * a substring — avoids e.g. "notinstagram.com.evil.tld" matching "instagram.com"). */
+function isHostOrSubdomain(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
 }
 
 export function extractYoutubeVideoId(url: string): string | null {
