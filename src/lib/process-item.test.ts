@@ -124,3 +124,25 @@ describe("attempt bookkeeping", () => {
     await expect(processItem(404)).rejects.toThrow(/not found/i);
   });
 });
+
+/* == S3 == */
+describe("the image_file_id rule", () => {
+  it("counts a screenshot alone as content and skips needs_note", async () => {
+    seedItem({ userNote: null, imageFileId: "file123" });
+
+    const { item, needsNote } = await processItem(1);
+
+    expect(needsNote).toBe(false);
+    expect(item.status).toBe("done");
+    expect(summarizeItem).toHaveBeenCalled();
+  });
+
+  it("passes the image_file_id through to the summarizer", async () => {
+    seedItem({ userNote: null, imageFileId: "file123" });
+
+    await processItem(1);
+
+    expect(summarizeItem.mock.calls[0][0]).toMatchObject({ imageFileId: "file123" });
+  });
+});
+/* == S3 == */
