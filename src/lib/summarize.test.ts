@@ -11,6 +11,17 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 vi.mock("@/lib/env", () => ({ env: { ANTHROPIC_API_KEY: "test-key" } }));
 
+/* == S3 == */
+const buildScreenshotImageBlock = vi.fn().mockResolvedValue({
+  type: "image",
+  source: { type: "base64", media_type: "image/jpeg", data: "abc123" },
+});
+vi.mock("@/lib/vision", () => ({
+  buildScreenshotImageBlock,
+  SCREENSHOT_INSTRUCTION: "SCREENSHOT_INSTRUCTION_TEXT",
+}));
+/* == S3 == */
+
 const { summarizeItem, SUMMARY_MODEL, TRANSCRIPT_MAX_CHARS } = await import("@/lib/summarize");
 
 /** A well-formed response from the SDK. */
@@ -41,6 +52,9 @@ const input = { url: "https://example.com/x", platform: "other" };
 beforeEach(() => {
   create.mockReset();
   create.mockResolvedValue(reply());
+  /* == S3 == */
+  buildScreenshotImageBlock.mockClear();
+  /* == S3 == */
 });
 
 describe("summarizeItem request shape", () => {
@@ -156,3 +170,29 @@ describe("summarizeItem response handling", () => {
     expect(result.output.category).toBe("other");
   });
 });
+
+/* == S3 == */
+describe("screenshot content block", () => {
+  it("builds an image block before the text block when image_file_id is set", async () => {
+    await summarizeItem({ ...input, imageFileId: "file123" });
+
+    expect(buildScreenshotImageBlock).toHaveBeenCalledWith("file123");
+
+    const content = create.mock.calls[0][0].messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content[0]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/jpeg", data: "abc123" },
+    });
+    expect(content[1].type).toBe("text");
+    expect(content[1].text).toContain("SCREENSHOT_INSTRUCTION_TEXT");
+  });
+
+  it("leaves the plain-string content alone when there is no image", async () => {
+    await summarizeItem(input);
+
+    expect(buildScreenshotImageBlock).not.toHaveBeenCalled();
+    expect(typeof create.mock.calls[0][0].messages[0].content).toBe("string");
+  });
+});
+/* == S3 == */

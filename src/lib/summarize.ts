@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "@/lib/env";
 import { ITEM_CATEGORIES, type ItemCategory } from "@/db/schema";
+/* == S3 == */
+import { SCREENSHOT_INSTRUCTION, buildScreenshotImageBlock } from "@/lib/vision";
+/* == S3 == */
 
 /** Current-generation model (plan §1.5). Exported so tests can assert it. */
 export const SUMMARY_MODEL = "claude-opus-5";
@@ -20,6 +23,10 @@ export interface SummaryInput {
   userNote?: string | null;
   repoUrl?: string | null;
   repoReadme?: string | null;
+  /* == S3 == */
+  /** Telegram `file_id` of a forwarded screenshot, fetched at summarize time. */
+  imageFileId?: string | null;
+  /* == S3 == */
 }
 
 export interface SummaryOutput {
@@ -120,6 +127,17 @@ function isItemCategory(value: unknown): value is ItemCategory {
 }
 
 export async function summarizeItem(input: SummaryInput): Promise<SummaryResult> {
+  /* == S3 == */
+  // A screenshot goes in as an image block before the text block, per plan §6.3.
+  const userContent: string | Array<Anthropic.Beta.BetaImageBlockParam | Anthropic.Beta.BetaTextBlockParam> =
+    input.imageFileId
+      ? [
+          await buildScreenshotImageBlock(input.imageFileId),
+          { type: "text", text: `${SCREENSHOT_INSTRUCTION}\n\n${buildUserContent(input)}` },
+        ]
+      : buildUserContent(input);
+  /* == S3 == */
+
   const message = await anthropic().beta.messages.create({
     model: SUMMARY_MODEL,
     max_tokens: 16000,
@@ -133,7 +151,7 @@ export async function summarizeItem(input: SummaryInput): Promise<SummaryResult>
     system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
     tools: [SAVE_SUMMARY_TOOL],
     tool_choice: { type: "tool", name: "save_summary" },
-    messages: [{ role: "user", content: buildUserContent(input) }],
+    messages: [{ role: "user", content: userContent }],
   });
 
   if (message.stop_reason === "refusal") {
