@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { items } from "@/db/schema";
+import { buildSearchCondition } from "@/lib/search";
 
 export const dynamic = "force-dynamic";
 
@@ -26,13 +27,8 @@ export default async function Home({
 
   const conditions = [];
   if (q) {
-    conditions.push(
-      or(
-        ilike(items.title, `%${q}%`),
-        ilike(items.summary, `%${q}%`),
-        ilike(items.url, `%${q}%`)
-      )
-    );
+    const searchCondition = buildSearchCondition(q);
+    if (searchCondition) conditions.push(searchCondition);
   }
   if (platform) conditions.push(eq(items.platform, platform));
   if (status) conditions.push(eq(items.status, status));

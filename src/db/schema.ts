@@ -11,7 +11,20 @@ import {
   bigint,
   index,
   uniqueIndex,
+  customType,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+/**
+ * Drizzle has no built-in `tsvector` column type (plan §6.4). The expression
+ * below refers to sibling columns by their quoted db name rather than the
+ * table object, which doesn't exist yet while its own columns are defined.
+ */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 /**
  * The closed set of categories Claude may pick from (plan §2). Exported as a
@@ -89,6 +102,13 @@ export const items = pgTable(
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+
+    // Full-text search (plan §6.4). `tags` is jsonb; `translate` strips the
+    // `[`, `]` and `"` json punctuation instead of unnesting it in a
+    // subquery, which Postgres rejects inside a generated column.
+    search: tsvector("search").generatedAlwaysAs(
+      sql`setweight(to_tsvector('simple', coalesce("title", '')), 'A') || setweight(to_tsvector('simple', coalesce(translate("tags"::text, '[]"', '   '), '')), 'A') || setweight(to_tsvector('simple', coalesce("summary", '')), 'B') || setweight(to_tsvector('simple', coalesce("user_note", '') || ' ' || coalesce("source_caption", '')), 'C')`
+    ),
   },
   (table) => [
     // Telegram retries webhook deliveries; the same message must never create
@@ -96,6 +116,8 @@ export const items = pgTable(
     uniqueIndex("items_telegram_message_idx").on(table.telegramChatId, table.telegramMessageId),
     // Re-forwarding a link we already have is looked up by URL on every insert.
     index("items_url_idx").on(table.url),
+    // Backs `buildSearchCondition` (plan §6.4).
+    index("items_search_idx").using("gin", table.search),
   ]
 );
 
