@@ -41,9 +41,14 @@ export type UpdateCall = {
 export type DeleteCall = { op: "delete"; where?: unknown; affected: number[] };
 export type DbCall = SelectCall | InsertCall | UpdateCall | DeleteCall;
 
-/** Minimal thenable so `await db.update(...).set(...).where(...)` resolves. */
-function resolved() {
-  return { then: <T,>(onFulfilled: (value: undefined) => T) => Promise.resolve().then(onFulfilled) };
+/**
+ * Drizzle's builders only hit the database when awaited. These mirror that:
+ * the side effect runs on `then`, not when the chain is built.
+ */
+type Awaitable<T> = { then: Promise<T>["then"] };
+
+function awaitable<T>(run: () => T): Awaitable<T> {
+  return { then: (onFulfilled, onRejected) => Promise.resolve(run()).then(onFulfilled, onRejected) };
 }
 
 export class DbMock {
@@ -116,13 +121,11 @@ export class DbMock {
         call.limit = limit;
         return chain;
       },
-      then: <T,>(onFulfilled: (rows: MockRow[]) => T) => {
+      then: awaitable(() => {
         this.calls.push(call);
         const rows = this.matching(this.selectWhere);
-        return Promise.resolve(call.limit === undefined ? rows : rows.slice(0, call.limit)).then(
-          onFulfilled
-        );
-      },
+        return call.limit === undefined ? rows : rows.slice(0, call.limit);
+      }).then,
     };
     return chain;
   }
@@ -145,10 +148,9 @@ export class DbMock {
     };
     return {
       returning: async () => [run()],
-      then: <T,>(onFulfilled: (value: undefined) => T) => {
+      then: awaitable<void>(() => {
         run();
-        return Promise.resolve().then(onFulfilled);
-      },
+      }).then,
     };
   }
 
@@ -159,14 +161,8 @@ export class DbMock {
       this.calls.push({ op: "update", set: values, where, affected: affected.map((r) => r.id) });
     };
     return {
-      where: (where: unknown) => {
-        run(where);
-        return resolved();
-      },
-      then: <T,>(onFulfilled: (value: undefined) => T) => {
-        run();
-        return Promise.resolve().then(onFulfilled);
-      },
+      where: (where: unknown) => awaitable<void>(() => run(where)),
+      then: awaitable<void>(() => run()).then,
     };
   }
 
@@ -178,14 +174,8 @@ export class DbMock {
       this.calls.push({ op: "delete", where, affected: [...ids] });
     };
     return {
-      where: (where: unknown) => {
-        run(where);
-        return resolved();
-      },
-      then: <T,>(onFulfilled: (value: undefined) => T) => {
-        run();
-        return Promise.resolve().then(onFulfilled);
-      },
+      where: (where: unknown) => awaitable<void>(() => run(where)),
+      then: awaitable<void>(() => run()).then,
     };
   }
 }

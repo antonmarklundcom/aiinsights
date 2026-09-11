@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # `next build` imports src/db, which validates env (src/lib/env.ts).
+      # No database is reached at build time, so placeholders are enough.
+      - run: npm run build
+        env:
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+          ANTHROPIC_API_KEY: sk-ant-ci-placeholder
+          TELEGRAM_BOT_TOKEN: "000000:ci-placeholder"
+          TELEGRAM_WEBHOOK_SECRET: ci-placeholder
+          TELEGRAM_ALLOWED_CHAT_ID: "0"
+          DASHBOARD_PASSWORD: ci-placeholder
+          CRON_SECRET: ci-placeholder
+          AUTH_COOKIE_SECRET: ci-placeholder
+
+      # A schema change that was never turned into a migration would silently
+      # drift from drizzle/ — generate must produce nothing new.
+      - name: Migrations are up to date
+        run: |
+          npm run db:generate
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            echo "::error::src/db/schema.ts has changes with no migration. Run 'npm run db:generate' and commit drizzle/."
+            git status --porcelain drizzle
+            exit 1
+          fi

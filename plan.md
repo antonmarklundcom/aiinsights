@@ -324,6 +324,7 @@ reviewed and committed; CI green; PR merged.
 | Phase | PR | Log |
 |---|---|---|
 | plan | this PR | — |
+| O1 Foundation | #4 | `docs/log/O1.md` |
 
 ## 10. Backlog
 

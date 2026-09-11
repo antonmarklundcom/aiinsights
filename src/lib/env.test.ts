@@ -50,9 +50,13 @@ describe("loadEnv", () => {
   });
 
   it("requires the production-only keys when NODE_ENV is production", () => {
-    expect(() => loadEnv({ ...ALWAYS, NODE_ENV: "production" })).toThrow(
-      /TELEGRAM_WEBHOOK_SECRET.*DASHBOARD_PASSWORD/s
-    );
+    let message = "";
+    try {
+      loadEnv({ ...ALWAYS, NODE_ENV: "production" });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    for (const key of Object.keys(PRODUCTION_ONLY)) expect(message).toContain(key);
   });
 
   it("only warns about the production-only keys outside production", () => {

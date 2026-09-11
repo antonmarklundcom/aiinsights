@@ -49,16 +49,43 @@ web dashboard.
 
 1. Create a free project at [neon.tech](https://neon.tech).
 2. Copy the pooled connection string into `DATABASE_URL`.
-3. Push the schema:
+3. Apply the schema:
    ```bash
    npm install
-   npm run db:push
+   npm run db:migrate
    ```
+   Schema changes go through committed migrations in `drizzle/`: edit
+   `src/db/schema.ts`, run `npm run db:generate` to write the SQL, commit it,
+   then `npm run db:migrate` to apply. CI fails a PR whose schema has no
+   matching migration.
 
 ### 2. Anthropic
 
 Create an API key at [console.anthropic.com](https://console.anthropic.com) and set
 `ANTHROPIC_API_KEY`.
+
+### 2b. Environment variables
+
+`src/lib/env.ts` validates the environment and throws once, listing every missing
+key, rather than failing later with an undefined value. `.env.example` documents
+all of them.
+
+| Variable | Required | What it's for |
+|---|---|---|
+| `DATABASE_URL` | always | Neon pooled connection string |
+| `ANTHROPIC_API_KEY` | always | Claude summarization |
+| `TELEGRAM_BOT_TOKEN` | always | Bot API calls |
+| `TELEGRAM_WEBHOOK_SECRET` | production | Verifies webhook calls came from Telegram |
+| `TELEGRAM_ALLOWED_CHAT_ID` | production | Locks the bot to your chat |
+| `DASHBOARD_PASSWORD` | production | The single shared dashboard password |
+| `CRON_SECRET` | production | Bearer token the retry cron route requires |
+| `AUTH_COOKIE_SECRET` | production | Signs the dashboard session cookie |
+| `GITHUB_TOKEN` | optional | Higher rate limit when fetching repo READMEs |
+
+The production-only ones are a warning rather than a crash in development, so you
+can run the dashboard locally without a bot. `next build` runs in production mode,
+so a build needs all of them set — placeholder values are fine (see
+`.github/workflows/ci.yml`).
 
 ### 3. Telegram bot
 
@@ -101,6 +128,22 @@ npm run dev
 The webhook route works locally too if you tunnel it (e.g. `ngrok http 3000`)
 and point `setWebhook` at the tunnel URL — useful for testing changes to the
 summarization pipeline against your real Telegram chat.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+`npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, plus a check
+that `src/db/schema.ts` has no changes missing from `drizzle/`. The build step
+uses placeholder env values; nothing in CI reaches a real database.
+
+Locally, the same four commands are the pre-push check:
+
+```bash
+npm run lint && npm run typecheck && npm test && npm run build
+```
+
+`npm run typecheck` runs `next typegen` first, because Next generates the route
+and layout types (`LayoutProps`, `PageProps`) that `tsc` needs.
 
 ## Notes / limitations
 
