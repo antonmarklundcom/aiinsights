@@ -1,0 +1,22 @@
+CREATE TABLE "items" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"url" text NOT NULL,
+	"platform" varchar(20) NOT NULL,
+	"source_caption" text,
+	"transcript" text,
+	"user_note" text,
+	"repo_url" text,
+	"repo_readme" text,
+	"title" text,
+	"summary" text,
+	"category" varchar(60),
+	"tags" jsonb DEFAULT '[]'::jsonb,
+	"how_to_start" jsonb DEFAULT '[]'::jsonb,
+	"status" varchar(20) DEFAULT 'pending' NOT NULL,
+	"implemented" boolean DEFAULT false NOT NULL,
+	"processing_error" text,
+	"telegram_chat_id" bigint,
+	"telegram_message_id" bigint,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);

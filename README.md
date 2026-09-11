@@ -49,16 +49,64 @@ web dashboard.
 
 1. Create a free project at [neon.tech](https://neon.tech).
 2. Copy the pooled connection string into `DATABASE_URL`.
-3. Push the schema:
+3. Apply the schema:
    ```bash
    npm install
-   npm run db:push
+   npm run db:migrate
    ```
+   Schema changes go through committed migrations in `drizzle/`: edit
+   `src/db/schema.ts`, run `npm run db:generate` to write the SQL, commit it,
+   then `npm run db:migrate` to apply. CI fails a PR whose schema has no
+   matching migration.
+
+   **If your database predates migrations** (its `items` table was created with
+   the old `db:push` flow), migration `0000` is a baseline of exactly that table
+   and will fail with `relation "items" already exists`. Mark it as already
+   applied once, then migrate normally:
+
+   ```sql
+   CREATE SCHEMA IF NOT EXISTS drizzle;
+   CREATE TABLE IF NOT EXISTS drizzle."__drizzle_migrations" (
+     id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint
+   );
+   INSERT INTO drizzle."__drizzle_migrations" ("hash", "created_at") VALUES (
+     '585077ddd6e68ea88cbe30089e74543dc16cb199432d10e4b1b6700a9beadad2',
+     1789092093129
+   );
+   ```
+
+   The hash is the sha256 of `drizzle/0000_clumsy_jetstream.sql` and the number is
+   its `when` from `drizzle/meta/_journal.json`; the migrator skips anything older
+   than the newest recorded timestamp. A fresh, empty database needs none of this —
+   just run `npm run db:migrate`.
 
 ### 2. Anthropic
 
 Create an API key at [console.anthropic.com](https://console.anthropic.com) and set
 `ANTHROPIC_API_KEY`.
+
+### 2b. Environment variables
+
+`src/lib/env.ts` validates the environment and throws once, listing every missing
+key, rather than failing later with an undefined value. `.env.example` documents
+all of them.
+
+| Variable | Required | What it's for |
+|---|---|---|
+| `DATABASE_URL` | always | Neon pooled connection string |
+| `ANTHROPIC_API_KEY` | always | Claude summarization |
+| `TELEGRAM_BOT_TOKEN` | always | Bot API calls |
+| `TELEGRAM_WEBHOOK_SECRET` | production | Verifies webhook calls came from Telegram |
+| `TELEGRAM_ALLOWED_CHAT_ID` | production | Locks the bot to your chat |
+| `DASHBOARD_PASSWORD` | production | The single shared dashboard password |
+| `CRON_SECRET` | production | Bearer token the retry cron route requires |
+| `AUTH_COOKIE_SECRET` | production | Signs the dashboard session cookie |
+| `GITHUB_TOKEN` | optional | Higher rate limit when fetching repo READMEs |
+
+The production-only ones are a warning rather than a crash in development, so you
+can run the dashboard locally without a bot. `next build` runs in production mode,
+so a build needs all of them set — placeholder values are fine (see
+`.github/workflows/ci.yml`).
 
 ### 3. Telegram bot
 
@@ -101,6 +149,22 @@ npm run dev
 The webhook route works locally too if you tunnel it (e.g. `ngrok http 3000`)
 and point `setWebhook` at the tunnel URL — useful for testing changes to the
 summarization pipeline against your real Telegram chat.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+`npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, plus a check
+that `src/db/schema.ts` has no changes missing from `drizzle/`. The build step
+uses placeholder env values; nothing in CI reaches a real database.
+
+Locally, the same four commands are the pre-push check:
+
+```bash
+npm run lint && npm run typecheck && npm test && npm run build
+```
+
+`npm run typecheck` runs `next typegen` first, because Next generates the route
+and layout types (`LayoutProps`, `PageProps`) that `tsc` needs.
 
 ## Notes / limitations
 
