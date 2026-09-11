@@ -101,8 +101,9 @@ describe("selection rule", () => {
     const [select] = dbMock.callsOf("select");
     expect(select.limit).toBe(BATCH_SIZE);
     expect(BATCH_SIZE).toBe(10);
+    // `nulls first` matters: a never-attempted item is the most urgent one.
     expect(new PgDialect().sqlToQuery(select.orderBy![0] as SQL).sql).toMatch(
-      /"last_attempt_at" asc/
+      /"last_attempt_at" asc nulls first/
     );
   });
 });

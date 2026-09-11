@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { items } from "@/db/schema";
 import { env } from "@/lib/env";
@@ -38,7 +38,10 @@ export async function GET(req: NextRequest) {
         or(isNull(items.lastAttemptAt), lt(items.lastAttemptAt, cutoff))
       )
     )
-    .orderBy(asc(items.lastAttemptAt))
+    // `nulls first`, not plain `asc`: Postgres sorts NULLs last, which would
+    // park the items that were never attempted at all — the most urgent ones,
+    // a webhook that died before its first run — behind every older retry.
+    .orderBy(sql`${items.lastAttemptAt} asc nulls first`)
     .limit(BATCH_SIZE);
 
   let processed = 0;

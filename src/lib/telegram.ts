@@ -8,10 +8,28 @@ const TELEGRAM_API = "https://api.telegram.org";
  */
 export const MAX_MESSAGE_CHARS = 4000;
 
-/** Truncates to `MAX_MESSAGE_CHARS`, marking the cut with an ellipsis. */
+/**
+ * Truncates to `MAX_MESSAGE_CHARS`, marking the cut with an ellipsis.
+ *
+ * The cut lands on a line boundary where possible. Replies are HTML and every
+ * tag `telegram-format.ts` emits opens and closes on a single line, so cutting
+ * between lines cannot split a tag or orphan one — and a message with broken
+ * entities is rejected outright by Telegram rather than merely truncated.
+ */
 export function truncateForTelegram(text: string): string {
   if (text.length <= MAX_MESSAGE_CHARS) return text;
-  return `${text.slice(0, MAX_MESSAGE_CHARS - 1)}…`;
+
+  const hard = text.slice(0, MAX_MESSAGE_CHARS - 1);
+  const lastNewline = hard.lastIndexOf("\n");
+  // Only trust a line boundary that still leaves a useful message behind.
+  const safe = lastNewline > MAX_MESSAGE_CHARS / 2 ? hard.slice(0, lastNewline) : dropPartialTag(hard);
+  return `${safe}…`;
+}
+
+/** Drops a trailing `<b`-style fragment left behind by a hard cut. */
+function dropPartialTag(text: string): string {
+  const lastOpen = text.lastIndexOf("<");
+  return lastOpen > text.lastIndexOf(">") ? text.slice(0, lastOpen) : text;
 }
 
 /**
