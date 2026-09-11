@@ -59,6 +59,27 @@ web dashboard.
    then `npm run db:migrate` to apply. CI fails a PR whose schema has no
    matching migration.
 
+   **If your database predates migrations** (its `items` table was created with
+   the old `db:push` flow), migration `0000` is a baseline of exactly that table
+   and will fail with `relation "items" already exists`. Mark it as already
+   applied once, then migrate normally:
+
+   ```sql
+   CREATE SCHEMA IF NOT EXISTS drizzle;
+   CREATE TABLE IF NOT EXISTS drizzle."__drizzle_migrations" (
+     id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint
+   );
+   INSERT INTO drizzle."__drizzle_migrations" ("hash", "created_at") VALUES (
+     '585077ddd6e68ea88cbe30089e74543dc16cb199432d10e4b1b6700a9beadad2',
+     1789092093129
+   );
+   ```
+
+   The hash is the sha256 of `drizzle/0000_clumsy_jetstream.sql` and the number is
+   its `when` from `drizzle/meta/_journal.json`; the migrator skips anything older
+   than the newest recorded timestamp. A fresh, empty database needs none of this —
+   just run `npm run db:migrate`.
+
 ### 2. Anthropic
 
 Create an API key at [console.anthropic.com](https://console.anthropic.com) and set
