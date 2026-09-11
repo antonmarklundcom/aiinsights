@@ -79,14 +79,20 @@ export default async function ItemPage({
         </p>
       )}
 
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noreferrer"
-        className="block text-sm text-blue-600 dark:text-blue-400 mt-3 break-all hover:underline"
-      >
-        {item.url}
-      </a>
+      {/* == L1 == */}
+      {/* tg://photo/<file_id> (S3 screenshot captures) isn't a browsable URL. */}
+      {item.url.startsWith("http://") || item.url.startsWith("https://") ? (
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-sm text-blue-600 dark:text-blue-400 mt-3 break-all hover:underline"
+        >
+          {item.url}
+        </a>
+      ) : (
+        <p className="text-sm text-neutral-400 mt-3 break-all">Screenshot capture (no link)</p>
+      )}
 
       {item.repoUrl && (
         <a
