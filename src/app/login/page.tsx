@@ -13,8 +13,11 @@ export default async function LoginPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const params = await searchParams;
+  // Same rule as the action's `safeNext`: a hidden field is still attacker-
+  // supplied, so never round-trip anything that could leave this origin.
   const raw = typeof params.next === "string" ? params.next : "/";
-  const next = raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+  const next =
+    raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : "/";
 
   if (await hasSession()) redirect(next);
 

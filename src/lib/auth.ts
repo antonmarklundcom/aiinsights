@@ -82,7 +82,7 @@ function toHex(bytes: ArrayBuffer): string {
 }
 
 /** Parses lowercase hex. Returns `undefined` for anything that is not hex. */
-function fromHex(hex: string): Uint8Array | undefined {
+function fromHex(hex: string): Uint8Array<ArrayBuffer> | undefined {
   if (hex.length === 0 || hex.length % 2 !== 0 || !/^[0-9a-f]+$/.test(hex)) return undefined;
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
@@ -138,7 +138,7 @@ export async function verifySession(
   const signed = await crypto.subtle.verify(
     "HMAC",
     key,
-    signature as unknown as BufferSource,
+    signature,
     encoder.encode(payload)
   );
   if (!signed) return false;

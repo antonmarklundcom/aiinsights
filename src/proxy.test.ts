@@ -74,7 +74,7 @@ describe("proxy", () => {
   it("redirects an unauthenticated request to /login with a next param", async () => {
     withAuth();
     const response = await proxy(request("/items/12?tab=notes"));
-    expect(response.status).toBe(307);
+    expect(response.status).toBe(302);
     const location = new URL(response.headers.get("location") ?? "");
     expect(location.pathname).toBe("/login");
     expect(location.searchParams.get("next")).toBe("/items/12?tab=notes");
@@ -91,8 +91,8 @@ describe("proxy", () => {
   it("redirects an expired or tampered cookie", async () => {
     withAuth();
     const expired = await signSession(Date.now() - 1, SECRET);
-    expect((await proxy(request("/", expired))).status).toBe(307);
-    expect((await proxy(request("/", "1800000000000.deadbeef"))).status).toBe(307);
+    expect((await proxy(request("/", expired))).status).toBe(302);
+    expect((await proxy(request("/", "1800000000000.deadbeef"))).status).toBe(302);
   });
 
   it("leaves the telegram webhook and the cron route reachable without a cookie", async () => {

@@ -47,7 +47,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const login = new URL("/login", request.nextUrl);
   login.searchParams.set("next", `${pathname}${search}`);
-  return NextResponse.redirect(login);
+  // 302, not `NextResponse.redirect`'s default 307: a 307 would replay an
+  // unauthenticated server action's POST body against /login.
+  return NextResponse.redirect(login, 302);
 }
 
 export const config = {
