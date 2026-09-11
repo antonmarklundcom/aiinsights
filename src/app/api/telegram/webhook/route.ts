@@ -129,12 +129,25 @@ export async function POST(req: NextRequest) {
   // A screenshot with no link is still a valid capture (plan §6.3): save it
   // as its own item, with any caption text becoming the note.
   if (photo) {
+    const photoUrl = `tg://photo/${photo.file_id}`;
+
+    // Re-sending the same screenshot as a new message (not a Telegram retry —
+    // that's caught by the unique index below) gets the existing item back
+    // instead of a duplicate, same as the link path.
+    const [existingPhoto] = await db.select().from(items).where(eq(items.url, photoUrl)).limit(1);
+    if (existingPhoto) {
+      await sendTelegramMessage(chatId, formatDuplicateReply(existingPhoto), {
+        replyToMessageId: message.message_id,
+      });
+      return ok();
+    }
+
     let photoItemId: number;
     try {
       const [created] = await db
         .insert(items)
         .values({
-          url: `tg://photo/${photo.file_id}`,
+          url: photoUrl,
           platform: "other",
           userNote: text || null,
           telegramChatId: chatId,

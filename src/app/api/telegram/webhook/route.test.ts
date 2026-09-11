@@ -231,6 +231,17 @@ describe("a screenshot with no link", () => {
     await post(request(photoUpdate()));
     expect(sendTelegramMessage.mock.calls[0][1]).toMatch(/saved/i);
   });
+
+  it("dedupes a re-sent screenshot (new message, same file_id) by its pseudo-url", async () => {
+    dbMock.seed([{ id: 5, url: "tg://photo/photo1", title: "Already here" }]);
+
+    const res = await post(request(photoUpdate({}, CHAT_ID, 2)));
+
+    expect(res.status).toBe(200);
+    expect(dbMock.callsOf("insert")).toHaveLength(0);
+    expect(afterCallbacks).toHaveLength(0);
+    expect(sendTelegramMessage.mock.calls[0][1]).toMatch(/already saved/i);
+  });
 });
 
 describe("a screenshot forwarded with a link", () => {
