@@ -99,3 +99,26 @@ export function stripTrackingParams(url: string): string {
     return url;
   }
 }
+
+/**
+ * Public base URL of the dashboard, or `null` when nothing tells us what it
+ * is. Read straight from `process.env` rather than `@/lib/env` on purpose:
+ * this is optional everywhere and must never block startup (plan §4.5).
+ * `VERCEL_PROJECT_PRODUCTION_URL` is set automatically on Vercel and is a bare
+ * host, so the protocol is added here.
+ */
+export function appBaseUrl(): string | null {
+  const explicit = process.env.APP_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (host) return `https://${host.replace(/\/+$/, "")}`;
+
+  return null;
+}
+
+/** Absolute link to an item's dashboard page, or `null` if the base URL is unknown. */
+export function dashboardItemUrl(itemId: number): string | null {
+  const base = appBaseUrl();
+  return base ? `${base}/items/${itemId}` : null;
+}
