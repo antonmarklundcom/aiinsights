@@ -1,46 +1,54 @@
 # AI Insights
 
 A personal knowledge base for the AI tools / open-source repos / dev tricks you see on
-Instagram and YouTube and actually mean to try. Share a post to a Telegram bot,
-it saves the link, pulls whatever it can (transcript, caption, linked repo README),
-asks you for a one-line note if it can't find anything, and asks Claude to turn it
-into a title, summary, tags, and step-by-step "how to get started" — searchable in a
-web dashboard.
+Instagram, YouTube, or anywhere else, and actually mean to try. Forward a link (or a
+screenshot) to a Telegram bot, it saves it, pulls whatever it can (transcript, caption,
+linked repo README, or the screenshot's own on-screen text), asks you for a one-line
+note if it can't find anything, and asks Claude to turn it into a title, summary,
+category, tags, and step-by-step "how to get started" — searchable in a
+password-protected web dashboard.
 
 ## How it works
 
-1. **Capture** — on Instagram/YouTube, tap Share → Telegram → send it to your bot.
-2. **Webhook** (`/api/telegram/webhook`) saves the link and immediately tries to
+1. **Capture** — share a link to your bot (Instagram's native Share sheet includes
+   Telegram directly), or just send a screenshot. The bot saves whatever link or
+   image is in the message; it isn't picky about the source.
+2. **Webhook** (`/api/telegram/webhook`) saves the item and immediately tries to
    gather content:
    - YouTube: video title (oEmbed) + captions/transcript (public caption track,
      no API key needed).
-   - Instagram, and anything else (a Notion doc, an article, a bare repo
-     link — whatever you actually forward): best-effort `og:title`/
-     `og:description` scrape. Instagram often blocks this — that's expected
-     and handled. The bot isn't picky about the link being Instagram/YouTube
-     specifically; it saves whatever link is in the message.
+   - A screenshot (no link, or a link plus a photo): stored and later shown to
+     Claude directly, so it can read on-screen text — repo names, captions,
+     commands — that no scrape would find.
+   - Any other link (Instagram, a Notion doc, an article, a bare repo link):
+     best-effort `og:title`/`og:description` scrape. Instagram often blocks
+     this — that's expected and handled.
    - If a GitHub/GitLab/etc. link is mentioned in the message (either as the
      saved link itself, or alongside it — e.g. an IG Reel about a repo), its
      README is fetched too and used to ground the summary.
    - Tracking params (`fbclid`, `utm_*`, `igsi`/`igshid`, ...) are stripped
-     from saved URLs.
+     from saved URLs. Re-forwarding a link you already saved replies with a
+     link to the existing item instead of creating a duplicate.
 3. **Fallback** — if none of the above produced anything (common for Instagram
    Reels with no caption), the bot asks you to reply with a quick note
    ("repo that turns screenshots into React components"). Your next text reply
    in that chat is attached as the note and processing re-runs.
-4. **Summarize** — Claude turns whatever content is available into a structured
-   title, 2-4 sentence summary, category, tags, and concrete getting-started
-   steps.
-5. **Dashboard** (`/`) — search and filter everything you've saved by platform,
-   status, category or "implemented" state. Each item has a detail page where
-   you can add/edit your note, re-run the summary, mark it implemented, or
-   delete it.
+4. **Summarize** — Claude turns whatever content is available (text, transcript,
+   README, or screenshot image) into a structured title, 2-4 sentence summary,
+   category, tags, and concrete getting-started steps, always in English. A
+   failed attempt is retried automatically (a Vercel cron sweeps stuck items
+   every 15 minutes) up to 3 attempts before it's marked `failed`.
+5. **Dashboard** (`/`) — behind a single shared password. Full-text search plus
+   filters by platform, status, category, tag, and "implemented" state, with
+   cursor pagination. Each item has a detail page where you can add/edit your
+   note, re-run the summary (even past the 3-attempt limit), mark it
+   implemented, copy it as Markdown, or delete it.
 
 ## Stack
 
 - Next.js (App Router) on Vercel
 - Neon Postgres + Drizzle ORM
-- Anthropic API (Claude) for summarization
+- Anthropic API (Claude) for summarization, including screenshot vision
 - Telegram Bot API for capture
 
 ## Setup
@@ -133,9 +141,17 @@ username → send. No extension needed.
 ### 4. Deploy (Vercel)
 
 1. Import this repo into Vercel.
-2. Add all vars from `.env.example` as Environment Variables.
+2. Add all vars from `.env.example` as Environment Variables — set them on both
+   **Production** and **Preview**, or preview deployments crash on first request.
 3. Deploy.
 4. Go back and finish step 3 above (webhook registration + chat id lock).
+5. The dashboard is gated by a single shared password (`DASHBOARD_PASSWORD`); the
+   login page sets a signed cookie (`AUTH_COOKIE_SECRET`) that lasts 30 days. The
+   webhook and cron routes are never gated by this cookie — they check their own
+   secrets instead.
+6. The retry cron (`/api/cron/reprocess`, every 15 minutes) requires a Vercel plan
+   with sub-daily cron schedules (Pro or higher). On the Hobby plan, Vercel runs it
+   at most once a day, so a stuck item's retry can be delayed accordingly.
 
 ### 5. Local development
 
@@ -169,10 +185,11 @@ and layout types (`LayoutProps`, `PageProps`) that `tsc` needs.
 ## Notes / limitations
 
 - Instagram has no public transcript/caption API, so most Reels rely on the
-  note-fallback flow — this is by design, not a bug.
+  note-fallback flow, or on sending a screenshot instead — both by design, not
+  a bug.
 - YouTube transcript fetching relies on scraping the public caption track from
   the watch page; if YouTube changes that page's structure it may need updating
   in `src/lib/youtube.ts`.
-- This is single-user by design (`TELEGRAM_ALLOWED_CHAT_ID` gate) — no auth on
-  the dashboard itself, so don't deploy it somewhere publicly discoverable
-  without adding one if that matters to you.
+- This is single-user by design: the bot only accepts messages from
+  `TELEGRAM_ALLOWED_CHAT_ID`, and the dashboard sits behind the single shared
+  `DASHBOARD_PASSWORD`. See KNOWN-ISSUES.md for open items.
