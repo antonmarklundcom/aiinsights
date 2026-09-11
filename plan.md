@@ -328,7 +328,7 @@ reviewed and committed; CI green; PR merged.
 | O2 Pipeline | #5 | `docs/log/O2.md` |
 | O3 Auth | #6 | `docs/log/O3.md` |
 | S4 Search | TBD | `docs/log/S4.md` |
-| S3 Screenshots | TBD | `docs/log/S3.md` |
+| S3 Screenshots | #10 | `docs/log/S3.md` |
 
 ## 10. Backlog
 
