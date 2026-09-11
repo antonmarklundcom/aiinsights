@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { items, ITEM_CATEGORIES, type ItemCategory } from "@/db/schema";
 import { buildSearchCondition } from "@/lib/search";
@@ -10,16 +10,6 @@ import { buildQueryString } from "@/components/query-string";
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
-
-/** `before` is `<createdAt ISO>_<id>` — opaque to the URL, decoded only here. */
-function parseCursor(raw: string): { createdAt: Date; id: number } | null {
-  const sep = raw.lastIndexOf("_");
-  if (sep === -1) return null;
-  const createdAt = new Date(raw.slice(0, sep));
-  const id = Number(raw.slice(sep + 1));
-  if (Number.isNaN(createdAt.getTime()) || !Number.isFinite(id)) return null;
-  return { createdAt, id };
-}
 
 export default async function Home({
   searchParams,
@@ -50,9 +40,13 @@ export default async function Home({
   if (category) conditions.push(eq(items.category, category));
   if (tag) conditions.push(sql`${items.tags} @> ${JSON.stringify([tag])}::jsonb`);
 
-  const cursor = before ? parseCursor(before) : null;
-  if (cursor) {
-    conditions.push(sql`(${items.createdAt}, ${items.id}) < (${cursor.createdAt}, ${cursor.id})`);
+  // `id` alone is the cursor: it's a serial assigned in strict insertion order
+  // at the same instant `created_at` is set (always `defaultNow()`, never
+  // backdated), so it orders identically to `(created_at, id)` without the
+  // millisecond-precision loss a JS `Date` round-trip would introduce.
+  const cursorId = before && /^\d+$/.test(before) ? Number(before) : null;
+  if (cursorId !== null) {
+    conditions.push(lt(items.id, cursorId));
   }
 
   const rows = await db
@@ -67,7 +61,7 @@ export default async function Home({
   const last = pageItems[pageItems.length - 1];
   const currentFilters = { q, platform, status, implemented, category, tag };
   const loadMoreHref = last
-    ? `/?${buildQueryString({ ...currentFilters, before: `${last.createdAt.toISOString()}_${last.id}` })}`
+    ? `/?${buildQueryString({ ...currentFilters, before: String(last.id) })}`
     : "";
 
   return (
