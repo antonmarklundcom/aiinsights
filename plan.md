@@ -326,6 +326,7 @@ reviewed and committed; CI green; PR merged.
 | plan | this PR | — |
 | O1 Foundation | #4 | `docs/log/O1.md` |
 | O2 Pipeline | #5 | `docs/log/O2.md` |
+| O3 Auth | #6 | `docs/log/O3.md` |
 
 ## 10. Backlog
 
