@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { items, ITEM_CATEGORIES, type ItemCategory } from "@/db/schema";
+import { buildSearchCondition } from "@/lib/search";
 import { FilterBar } from "@/components/FilterBar";
 import { ItemCard } from "@/components/ItemCard";
 import { buildQueryString } from "@/components/query-string";
@@ -39,13 +40,8 @@ export default async function Home({
 
   const conditions = [];
   if (q) {
-    conditions.push(
-      or(
-        ilike(items.title, `%${q}%`),
-        ilike(items.summary, `%${q}%`),
-        ilike(items.url, `%${q}%`)
-      )
-    );
+    const searchCondition = buildSearchCondition(q);
+    if (searchCondition) conditions.push(searchCondition);
   }
   if (platform) conditions.push(eq(items.platform, platform));
   if (status) conditions.push(eq(items.status, status));
