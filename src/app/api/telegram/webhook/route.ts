@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { desc, eq, and } from "drizzle-orm";
 import { db } from "@/db";
-import { items, type Item } from "@/db/schema";
+import { items } from "@/db/schema";
+import { env } from "@/lib/env";
 import {
   detectPlatform,
   detectRepoUrl,
@@ -11,38 +12,45 @@ import {
   stripTrackingParams,
 } from "@/lib/urls";
 import { sendTelegramMessage, type TelegramUpdate } from "@/lib/telegram";
+import { formatDuplicateReply, formatReply } from "@/lib/telegram-format";
 import { processItem } from "@/lib/process-item";
+import { isUniqueViolation } from "./pg-error";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const HELP_TEXT =
+  "Send me any link (Instagram, YouTube, GitHub, an article…) and I'll save it.";
+const HELP_TEXT_WITH_NOTE_HINT =
+  "Send me any link (Instagram, YouTube, GitHub, an article…) to save it. If I already asked for a note on something, just reply with it.";
+
+const ok = () => NextResponse.json({ ok: true });
+
 export async function POST(req: NextRequest) {
+  // Fail closed: an unconfigured secret rejects everything rather than leaving
+  // the bot open to anyone who finds the URL (plan §5.2, report §2).
+  const expectedSecret = env.TELEGRAM_WEBHOOK_SECRET;
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
-  if (process.env.TELEGRAM_WEBHOOK_SECRET && secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+  if (!expectedSecret || secret !== expectedSecret) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
   const update: TelegramUpdate = await req.json();
   const message = update.message;
-  if (!message) return NextResponse.json({ ok: true });
+  if (!message) return ok();
 
   const chatId = message.chat.id;
 
-  const allowedChatId = process.env.TELEGRAM_ALLOWED_CHAT_ID;
-  if (allowedChatId && String(chatId) !== allowedChatId) {
-    // Not your chat — stay silent rather than letting a stranger use the bot.
-    return NextResponse.json({ ok: true });
-  }
+  // Same rule for the chat allow-list, but silently — a stranger who guessed
+  // the secret learns nothing from the response either way.
+  const allowedChatId = env.TELEGRAM_ALLOWED_CHAT_ID;
+  if (!allowedChatId || String(chatId) !== allowedChatId) return ok();
 
   const text = (message.text ?? message.caption ?? "").trim();
 
   if (!text) {
-    await sendTelegramMessage(
-      chatId,
-      "Forward me an Instagram or YouTube link (share → Telegram → this bot) and I'll save it.",
-      { replyToMessageId: message.message_id }
-    );
-    return NextResponse.json({ ok: true });
+    await sendTelegramMessage(chatId, HELP_TEXT, { replyToMessageId: message.message_id });
+    return ok();
   }
 
   const allUrls = extractUrls(text);
@@ -53,33 +61,58 @@ export async function POST(req: NextRequest) {
 
   if (contentUrl) {
     const cleanContentUrl = stripTrackingParams(contentUrl);
-    // If the content link itself is a repo (shared with no separate IG/YT
-    // link), treat it as its own repo too so the README still gets fetched.
+
+    // Re-forwarding something already saved gets the existing item back
+    // instead of a second row (plan §1.4).
+    const [existing] = await db
+      .select()
+      .from(items)
+      .where(eq(items.url, cleanContentUrl))
+      .limit(1);
+
+    if (existing) {
+      await sendTelegramMessage(chatId, formatDuplicateReply(existing), {
+        replyToMessageId: message.message_id,
+      });
+      return ok();
+    }
+
+    // Tracking params are stripped from the repo link too, not just the
+    // content link (report §7).
     const repoUrl = isRepoUrl(contentUrl)
       ? cleanContentUrl
-      : detectRepoUrl(text.replace(contentUrl, ""));
-    const noteText = allUrls
-      .reduce((t, u) => t.replace(u, ""), text)
-      .trim();
+      : stripTrackingParamsOrNull(detectRepoUrl(text.replace(contentUrl, "")));
+    const noteText = allUrls.reduce((t, u) => t.replace(u, ""), text).trim();
 
-    const [created] = await db
-      .insert(items)
-      .values({
-        url: cleanContentUrl,
-        platform: detectPlatform(contentUrl),
-        userNote: noteText || null,
-        repoUrl: repoUrl,
-        telegramChatId: chatId,
-        telegramMessageId: message.message_id,
-      })
-      .returning();
+    let createdId: number;
+    try {
+      const [created] = await db
+        .insert(items)
+        .values({
+          url: cleanContentUrl,
+          platform: detectPlatform(contentUrl),
+          userNote: noteText || null,
+          repoUrl,
+          telegramChatId: chatId,
+          telegramMessageId: message.message_id,
+        })
+        .returning();
+      createdId = created.id;
+    } catch (err) {
+      // Telegram retries any delivery it doesn't get a 2xx for. The unique
+      // index on (chat_id, message_id) turns that retry into this, which means
+      // the first delivery already succeeded: acknowledge and say nothing.
+      if (isUniqueViolation(err)) return ok();
+      throw err;
+    }
 
     await sendTelegramMessage(chatId, "Saved. Digging in…", {
       replyToMessageId: message.message_id,
     });
 
-    await runAndReply(created.id, chatId, message.message_id);
-    return NextResponse.json({ ok: true });
+    // The 200 goes out first; the scrape and the Claude call run after it.
+    after(() => runAndReply(createdId, chatId, message.message_id));
+    return ok();
   }
 
   // No link in this message — treat it as a note for the most recent item
@@ -97,21 +130,30 @@ export async function POST(req: NextRequest) {
       .set({ userNote: text, updatedAt: new Date() })
       .where(eq(items.id, pending.id));
 
-    await runAndReply(pending.id, chatId, message.message_id);
-    return NextResponse.json({ ok: true });
+    // A note means the user is asking for another try, so the attempt ceiling
+    // shouldn't stand in the way.
+    after(() => runAndReply(pending.id, chatId, message.message_id, { force: true }));
+    return ok();
   }
 
-  await sendTelegramMessage(
-    chatId,
-    "Forward me an Instagram or YouTube link to save it. If I already asked for a note on something, just reply with it.",
-    { replyToMessageId: message.message_id }
-  );
-  return NextResponse.json({ ok: true });
+  await sendTelegramMessage(chatId, HELP_TEXT_WITH_NOTE_HINT, {
+    replyToMessageId: message.message_id,
+  });
+  return ok();
 }
 
-async function runAndReply(itemId: number, chatId: number, replyToMessageId: number) {
+function stripTrackingParamsOrNull(url: string | null): string | null {
+  return url === null ? null : stripTrackingParams(url);
+}
+
+async function runAndReply(
+  itemId: number,
+  chatId: number,
+  replyToMessageId: number,
+  opts: { force?: boolean } = {}
+): Promise<void> {
   try {
-    const { item, needsNote } = await processItem(itemId);
+    const { item, needsNote } = await processItem(itemId, opts);
     await sendTelegramMessage(chatId, formatReply(item, needsNote), { replyToMessageId });
   } catch {
     await sendTelegramMessage(
@@ -120,29 +162,4 @@ async function runAndReply(itemId: number, chatId: number, replyToMessageId: num
       { replyToMessageId }
     );
   }
-}
-
-function formatReply(item: Item, needsNote: boolean): string {
-  if (needsNote) {
-    return [
-      `Saved: ${item.url}`,
-      "",
-      "Couldn't pull a caption or transcript for this one (common for Instagram). Reply with a quick note on what it's about — even a few words — and I'll fill in the rest.",
-    ].join("\n");
-  }
-
-  const lines = [`<b>${escapeHtml(item.title ?? "Saved item")}</b>`];
-  if (item.category) lines.push(`<i>${escapeHtml(item.category)}</i>`);
-  if (item.summary) lines.push("", escapeHtml(item.summary));
-  if (item.tags?.length)
-    lines.push("", item.tags.map((t) => `#${escapeHtml(t.replace(/\s+/g, "_"))}`).join(" "));
-  if (item.howToStart?.length) {
-    lines.push("", "<b>Get started:</b>");
-    item.howToStart.forEach((step, i) => lines.push(`${i + 1}. ${escapeHtml(step)}`));
-  }
-  return lines.join("\n");
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

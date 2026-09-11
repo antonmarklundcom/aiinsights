@@ -13,16 +13,14 @@ import type { Item, NewItem } from "../db/schema";
  *
  * Usage, at the top of a test file:
  *
- *   vi.mock("../db", async () => (await import("./db-mock")).dbModule());
- *   import { dbMock } from "./db-mock";
- *
- * Specifiers are relative on purpose: there is no `vitest.config.ts` yet, so
- * Vitest does not resolve the `@/*` tsconfig alias. Modules under test import
- * `@/db`, so S2 — which owns `vitest.config.ts` — has to add that alias before
- * it can mock the database out from under the webhook. Once it does,
- * `vi.mock("@/db", ...)` works and resolves to the same module.
+ *   vi.mock("@/db", async () => (await import("@/test/db-mock")).dbModule());
+ *   import { dbMock } from "@/test/db-mock";
  *
  *   beforeEach(() => dbMock.reset());
+ *
+ * The `@/*` alias resolves because O2 added `vitest.config.ts` (O1 had noted
+ * its absence as the blocker here). This file's own imports stay relative so
+ * it does not depend on that.
  */
 
 export type MockRow = Partial<Item> & { id: number };
@@ -155,13 +153,22 @@ export class DbMock {
   }
 
   private updateChain(values: Record<string, unknown>) {
-    const run = (where?: unknown) => {
+    const run = (where?: unknown): MockRow[] => {
       const affected = this.matching(this.updateWhere);
       for (const row of affected) Object.assign(row, values);
       this.calls.push({ op: "update", set: values, where, affected: affected.map((r) => r.id) });
+      return affected;
     };
     return {
-      where: (where: unknown) => awaitable<void>(() => run(where)),
+      // `.where(...)` is awaitable on its own and also chains into
+      // `.returning()`, mirroring Drizzle — `process-item.ts` needs the
+      // updated row back (added by O2).
+      where: (where: unknown) => ({
+        ...awaitable<void>(() => {
+          run(where);
+        }),
+        returning: async () => run(where),
+      }),
       then: awaitable<void>(() => run()).then,
     };
   }

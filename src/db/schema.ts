@@ -35,10 +35,9 @@ export const ITEM_CATEGORIES = [
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 /**
- * The Postgres enum type. The `category` column is still a `varchar` here on
- * purpose: existing rows hold free-text values from before the enum existed,
- * so O2 maps them in a hand-written data migration and only then casts the
- * column to this type (plan §5.2).
+ * The Postgres enum type backing `items.category`. O1 created the type; O2's
+ * hand-written `drizzle/0002` maps the legacy free-text values onto it and
+ * casts the column (plan §5.2).
  */
 export const itemCategoryEnum = pgEnum("item_category", ITEM_CATEGORIES);
 
@@ -68,7 +67,7 @@ export const items = pgTable(
     // AI output
     title: text("title"),
     summary: text("summary"), // 2-4 sentence "what is this"
-    category: varchar("category", { length: 60 }), // one of ITEM_CATEGORIES once O2 has migrated legacy values
+    category: itemCategoryEnum("category"), // legacy free-text values mapped by drizzle/0002 (plan §2)
     tags: jsonb("tags").$type<string[]>().default([]),
     howToStart: jsonb("how_to_start").$type<string[]>().default([]), // step-by-step getting-started list
 
