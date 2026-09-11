@@ -1,18 +1,25 @@
 import Link from "next/link";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { items } from "@/db/schema";
+import { items, ITEM_CATEGORIES, type ItemCategory } from "@/db/schema";
 import { buildSearchCondition } from "@/lib/search";
+import { FilterBar } from "@/components/FilterBar";
+import { ItemCard } from "@/components/ItemCard";
+import { buildQueryString } from "@/components/query-string";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Pending",
-  processing: "Processing…",
-  done: "Ready",
-  needs_note: "Needs your note",
-  failed: "Failed",
-};
+const PAGE_SIZE = 50;
+
+/** `before` is `<createdAt ISO>_<id>` — opaque to the URL, decoded only here. */
+function parseCursor(raw: string): { createdAt: Date; id: number } | null {
+  const sep = raw.lastIndexOf("_");
+  if (sep === -1) return null;
+  const createdAt = new Date(raw.slice(0, sep));
+  const id = Number(raw.slice(sep + 1));
+  if (Number.isNaN(createdAt.getTime()) || !Number.isFinite(id)) return null;
+  return { createdAt, id };
+}
 
 export default async function Home({
   searchParams,
@@ -20,10 +27,16 @@ export default async function Home({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const params = await searchParams;
-  const q = typeof params.q === "string" ? params.q : "";
-  const platform = typeof params.platform === "string" ? params.platform : "";
-  const status = typeof params.status === "string" ? params.status : "";
-  const implemented = typeof params.implemented === "string" ? params.implemented : "";
+  const get = (key: string) => (typeof params[key] === "string" ? params[key] : "");
+  const q = get("q");
+  const platform = get("platform");
+  const status = get("status");
+  const implemented = get("implemented");
+  const category = ITEM_CATEGORIES.includes(get("category") as ItemCategory)
+    ? (get("category") as ItemCategory)
+    : "";
+  const tag = get("tag");
+  const before = get("before");
 
   const conditions = [];
   if (q) {
@@ -34,13 +47,28 @@ export default async function Home({
   if (status) conditions.push(eq(items.status, status));
   if (implemented === "yes") conditions.push(eq(items.implemented, true));
   if (implemented === "no") conditions.push(eq(items.implemented, false));
+  if (category) conditions.push(eq(items.category, category));
+  if (tag) conditions.push(sql`${items.tags} @> ${JSON.stringify([tag])}::jsonb`);
+
+  const cursor = before ? parseCursor(before) : null;
+  if (cursor) {
+    conditions.push(sql`(${items.createdAt}, ${items.id}) < (${cursor.createdAt}, ${cursor.id})`);
+  }
 
   const rows = await db
     .select()
     .from(items)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(items.createdAt))
-    .limit(100);
+    .orderBy(desc(items.createdAt), desc(items.id))
+    .limit(PAGE_SIZE + 1);
+
+  const hasMore = rows.length > PAGE_SIZE;
+  const pageItems = rows.slice(0, PAGE_SIZE);
+  const last = pageItems[pageItems.length - 1];
+  const currentFilters = { q, platform, status, implemented, category, tag };
+  const loadMoreHref = last
+    ? `/?${buildQueryString({ ...currentFilters, before: `${last.createdAt.toISOString()}_${last.id}` })}`
+    : "";
 
   return (
     <main className="mx-auto max-w-4xl w-full px-6 py-10 flex-1">
@@ -52,103 +80,39 @@ export default async function Home({
         </p>
       </header>
 
-      <form className="flex flex-wrap gap-2 mb-6" action="/">
-        <input
-          type="text"
-          name="q"
-          defaultValue={q}
-          placeholder="Search title, summary, url…"
-          className="flex-1 min-w-[200px] rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm"
-        />
-        <select
-          name="platform"
-          defaultValue={platform}
-          className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm"
-        >
-          <option value="">All platforms</option>
-          <option value="instagram">Instagram</option>
-          <option value="youtube">YouTube</option>
-          <option value="other">Other</option>
-        </select>
-        <select
-          name="status"
-          defaultValue={status}
-          className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm"
-        >
-          <option value="">Any status</option>
-          <option value="done">Ready</option>
-          <option value="needs_note">Needs note</option>
-          <option value="pending">Pending</option>
-          <option value="processing">Processing</option>
-          <option value="failed">Failed</option>
-        </select>
-        <select
-          name="implemented"
-          defaultValue={implemented}
-          className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm"
-        >
-          <option value="">Implemented + not</option>
-          <option value="no">Not implemented</option>
-          <option value="yes">Implemented</option>
-        </select>
-        <button
-          type="submit"
-          className="rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-medium"
-        >
-          Filter
-        </button>
-      </form>
+      <FilterBar
+        q={q}
+        platform={platform}
+        status={status}
+        implemented={implemented}
+        category={category}
+        tag={tag}
+      />
 
-      {rows.length === 0 ? (
+      {pageItems.length === 0 ? (
         <p className="text-sm text-neutral-500">
-          Nothing saved yet. Share an Instagram/YouTube post to your Telegram bot to get
-          started.
+          {before || q || platform || status || implemented || category || tag
+            ? "Nothing matches these filters."
+            : "Nothing saved yet. Share an Instagram/YouTube post to your Telegram bot to get started."}
         </p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {rows.map((item) => (
-            <li key={item.id}>
+        <>
+          <ul className="flex flex-col gap-3">
+            {pageItems.map((item) => (
+              <ItemCard key={item.id} item={item} />
+            ))}
+          </ul>
+          {hasMore && (
+            <div className="mt-6 flex justify-center">
               <Link
-                href={`/items/${item.id}`}
-                className="block rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors"
+                href={loadMoreHref}
+                className="rounded-md border border-neutral-300 dark:border-neutral-700 px-4 py-2 text-sm font-medium"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">
-                    {item.title ?? "(untitled — still processing)"}
-                  </span>
-                  <span className="text-xs uppercase tracking-wide text-neutral-500 shrink-0">
-                    {item.platform}
-                  </span>
-                </div>
-                {item.summary && (
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1 line-clamp-2">
-                    {item.summary}
-                  </p>
-                )}
-                <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <span className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800">
-                    {STATUS_LABEL[item.status] ?? item.status}
-                  </span>
-                  {item.category && (
-                    <span className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800">
-                      {item.category}
-                    </span>
-                  )}
-                  {item.implemented && (
-                    <span className="text-xs rounded-full px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                      Implemented
-                    </span>
-                  )}
-                  {item.tags?.slice(0, 4).map((tag) => (
-                    <span key={tag} className="text-xs text-neutral-400">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
+                Load more
               </Link>
-            </li>
-          ))}
-        </ul>
+            </div>
+          )}
+        </>
       )}
     </main>
   );

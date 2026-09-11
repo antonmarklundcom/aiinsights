@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { items } from "@/db/schema";
 import { setImplemented, retryProcessing, saveNote, deleteItem } from "@/lib/actions";
+import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
+import { TagLink } from "@/components/TagLink";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,14 @@ export default async function ItemPage({
     redirect("/");
   }
 
+  const markdownLines = [`# ${item.title ?? "Untitled"}`, "", item.url];
+  if (item.summary) markdownLines.push("", "## Summary", "", item.summary);
+  if (item.howToStart && item.howToStart.length > 0) {
+    markdownLines.push("", "## Get started", "");
+    item.howToStart.forEach((step, i) => markdownLines.push(`${i + 1}. ${step}`));
+  }
+  const markdown = markdownLines.join("\n");
+
   return (
     <main className="mx-auto max-w-2xl w-full px-6 py-10 flex-1">
       <Link href="/" className="text-sm text-neutral-500 hover:underline">
@@ -62,6 +72,12 @@ export default async function ItemPage({
           </span>
         )}
       </div>
+
+      {item.aiModel && (
+        <p className="text-xs text-neutral-400 mt-2">
+          {item.aiModel} · {item.aiInputTokens ?? 0} in / {item.aiOutputTokens ?? 0} out tokens
+        </p>
+      )}
 
       <a
         href={item.url}
@@ -95,12 +111,11 @@ export default async function ItemPage({
       {item.tags && item.tags.length > 0 && (
         <div className="flex gap-2 flex-wrap mt-3">
           {item.tags.map((tag) => (
-            <span
+            <TagLink
               key={tag}
-              className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800"
-            >
-              #{tag}
-            </span>
+              tag={tag}
+              className="text-xs rounded-full px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+            />
           ))}
         </div>
       )}
@@ -171,9 +186,10 @@ export default async function ItemPage({
             type="submit"
             className="rounded-md border border-neutral-300 dark:border-neutral-700 px-4 py-2 text-sm font-medium"
           >
-            Re-run summary
+            Re-run summary (forces past 3 attempts)
           </button>
         </form>
+        <CopyMarkdownButton markdown={markdown} />
         <form action={remove}>
           <button
             type="submit"
