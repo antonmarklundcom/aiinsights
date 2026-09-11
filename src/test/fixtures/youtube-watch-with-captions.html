@@ -1,0 +1,14 @@
+<!--
+  Trimmed snippet of a YouTube watch page, keeping only the bits
+  `fetchTranscript` (src/lib/youtube.ts) reads: the embedded player response
+  script containing "captionTracks", with query-string ampersands escaped as
+  `\u0026` the way YouTube actually emits them. Not a full page.
+-->
+<html>
+<head><title>Example Video - YouTube</title></head>
+<body>
+<script>
+var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[{"baseUrl":"https://www.youtube.com/api/timedtext?v=abc123\u0026lang=es","name":{"simpleText":"Spanish"},"vssId":".es","languageCode":"es","kind":"asr","isTranslatable":true},{"baseUrl":"https://www.youtube.com/api/timedtext?v=abc123\u0026lang=en","name":{"simpleText":"English (auto-generated)"},"vssId":".en","languageCode":"en","kind":"asr","isTranslatable":true}],"audioTracks":[]}}};
+</script>
+</body>
+</html>

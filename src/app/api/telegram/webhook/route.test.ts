@@ -41,6 +41,17 @@ function update(text: string, chatId = CHAT_ID, messageId = 1) {
   return { message: { message_id: messageId, chat: { id: chatId }, text } };
 }
 
+/* == S3 == */
+function photoUpdate(
+  opts: { caption?: string; photo?: Array<{ file_id: string; width: number; height: number }> } = {},
+  chatId = CHAT_ID,
+  messageId = 1
+) {
+  const photo = opts.photo ?? [{ file_id: "photo1", width: 800, height: 600 }];
+  return { message: { message_id: messageId, chat: { id: chatId }, caption: opts.caption, photo } };
+}
+/* == S3 == */
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const post = (req: Request) => POST(req as any);
 
@@ -177,3 +188,79 @@ describe("a bare note", () => {
     expect(sendTelegramMessage.mock.calls[0][1]).not.toMatch(/instagram or youtube/i);
   });
 });
+
+/* == S3 == */
+describe("a screenshot with no link", () => {
+  it("is a valid capture: tg://photo/ url, platform other, image_file_id set", async () => {
+    const res = await post(request(photoUpdate()));
+
+    expect(res.status).toBe(200);
+    const [insert] = dbMock.callsOf("insert");
+    expect(insert.values.url).toBe("tg://photo/photo1");
+    expect(insert.values.platform).toBe("other");
+    expect(insert.values.imageFileId).toBe("photo1");
+    expect(insert.values.userNote).toBeNull();
+
+    expect(afterCallbacks).toHaveLength(1);
+    await afterCallbacks[0]();
+    expect(processItem).toHaveBeenCalledWith(insert.returned.id, {});
+  });
+
+  it("uses the caption as the note", async () => {
+    await post(request(photoUpdate({ caption: "the tool I meant to save" })));
+    const [insert] = dbMock.callsOf("insert");
+    expect(insert.values.userNote).toBe("the tool I meant to save");
+  });
+
+  it("picks the largest photo size at or under 1,600px", async () => {
+    await post(
+      request(
+        photoUpdate({
+          photo: [
+            { file_id: "small", width: 90, height: 90 },
+            { file_id: "big", width: 1280, height: 960 },
+          ],
+        })
+      )
+    );
+    const [insert] = dbMock.callsOf("insert");
+    expect(insert.values.imageFileId).toBe("big");
+  });
+
+  it("does not fall through to the help-text-with-note-hint reply", async () => {
+    await post(request(photoUpdate()));
+    expect(sendTelegramMessage.mock.calls[0][1]).toMatch(/saved/i);
+  });
+
+  it("dedupes a re-sent screenshot (new message, same file_id) by its pseudo-url", async () => {
+    dbMock.seed([{ id: 5, url: "tg://photo/photo1", title: "Already here" }]);
+
+    const res = await post(request(photoUpdate({}, CHAT_ID, 2)));
+
+    expect(res.status).toBe(200);
+    expect(dbMock.callsOf("insert")).toHaveLength(0);
+    expect(afterCallbacks).toHaveLength(0);
+    expect(sendTelegramMessage.mock.calls[0][1]).toMatch(/already saved/i);
+  });
+});
+
+describe("a screenshot forwarded with a link", () => {
+  it("sets image_file_id on the normal link insert", async () => {
+    await post(
+      request(photoUpdate({ caption: "https://instagram.com/p/abc cool tool" }))
+    );
+    const [insert] = dbMock.callsOf("insert");
+    expect(insert.values.url).toBe("https://instagram.com/p/abc");
+    expect(insert.values.imageFileId).toBe("photo1");
+  });
+});
+
+describe("no text and no photo", () => {
+  it("sends the help text, which now mentions screenshots", async () => {
+    const res = await post(request({ message: { message_id: 1, chat: { id: CHAT_ID } } }));
+    expect(res.status).toBe(200);
+    expect(sendTelegramMessage.mock.calls[0][1]).toMatch(/screenshot/i);
+    expect(dbMock.callsOf("insert")).toHaveLength(0);
+  });
+});
+/* == S3 == */

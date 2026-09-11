@@ -329,6 +329,8 @@ reviewed and committed; CI green; PR merged.
 | O3 Auth | #6 | `docs/log/O3.md` |
 | S4 Search | #8 | `docs/log/S4.md` |
 | S1 Dashboard | #9 | `docs/log/S1.md` |
+| S2 Tests | #7 | `docs/log/S2.md` |
+| S3 Screenshots | #10 | `docs/log/S3.md` |
 
 ## 10. Backlog
 

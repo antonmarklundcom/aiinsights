@@ -86,7 +86,9 @@ export async function processItem(
       repoReadme = await fetchRepoReadme(item.repoUrl);
     }
 
-    const hasContent = Boolean(caption || transcript || item.userNote || repoReadme);
+    /* == S3 == */
+    const hasContent = Boolean(caption || transcript || item.userNote || repoReadme || item.imageFileId);
+    /* == S3 == */
 
     if (!hasContent) {
       const [updated] = await db
@@ -111,6 +113,9 @@ export async function processItem(
       userNote: item.userNote,
       repoUrl: item.repoUrl,
       repoReadme,
+      /* == S3 == */
+      imageFileId: item.imageFileId,
+      /* == S3 == */
     });
 
     const [updated] = await db

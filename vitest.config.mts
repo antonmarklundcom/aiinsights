@@ -13,6 +13,16 @@ import { fileURLToPath } from "node:url";
  * it loads as CommonJS, and this package has no `"type": "module"`.
  */
 export default defineConfig({
+  test: {
+    environment: "node",
+    coverage: {
+      provider: "v8",
+      reporter: ["text"],
+      // Plan §6.2's coverage target is `src/lib/**` only — the routes and
+      // schema have their own tests but aren't part of the number.
+      include: ["src/lib/**"],
+    },
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
