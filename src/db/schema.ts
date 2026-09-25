@@ -92,6 +92,14 @@ export const items = pgTable(
     // Pipeline / user state
     status: varchar("status", { length: 20 }).notNull().default("pending"), // ITEM_STATUSES
     implemented: boolean("implemented").notNull().default(false),
+
+    // Weekly "implement one thing" loop (N1). Monday's nudge offers a few
+    // unimplemented items; tapping one sets `committedAt`, Friday asks about
+    // it. `lastNudgedAt` rotates the offer so the same three don't repeat;
+    // `dismissedAt` means "stop offering this", without deleting it.
+    committedAt: timestamp("committed_at", { withTimezone: true }),
+    lastNudgedAt: timestamp("last_nudged_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     processingError: text("processing_error"),
     attempts: integer("attempts").notNull().default(0), // incremented per processing run
     lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),

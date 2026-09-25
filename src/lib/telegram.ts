@@ -40,7 +40,7 @@ function dropPartialTag(text: string): string {
 export async function sendTelegramMessage(
   chatId: number,
   text: string,
-  opts: { replyToMessageId?: number } = {}
+  opts: { replyToMessageId?: number; buttons?: InlineButton[][] } = {}
 ): Promise<boolean> {
   let res: Response;
   try {
@@ -53,6 +53,7 @@ export async function sendTelegramMessage(
         reply_to_message_id: opts.replyToMessageId,
         parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
+        reply_markup: opts.buttons ? { inline_keyboard: opts.buttons } : undefined,
       }),
     });
   } catch (err) {
@@ -80,6 +81,28 @@ export async function sendTelegramMessage(
   return ok;
 }
 
+/** One inline-keyboard button; `callback_data` must stay under 64 bytes. */
+export interface InlineButton {
+  text: string;
+  callback_data: string;
+}
+
+/**
+ * Acknowledges a button tap so Telegram stops showing the spinner. Never
+ * fatal: a failed ack only leaves the spinner up a few seconds longer.
+ */
+export async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+  try {
+    await fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+    });
+  } catch (err) {
+    console.error("[telegram] answerCallbackQuery failed:", err);
+  }
+}
+
 export interface TelegramPhotoSize {
   file_id: string;
   width: number;
@@ -87,6 +110,12 @@ export interface TelegramPhotoSize {
 }
 
 export interface TelegramUpdate {
+  /** A tap on an inline button (the weekly nudge, N1). */
+  callback_query?: {
+    id: string;
+    data?: string;
+    message?: { message_id: number; chat: { id: number } };
+  };
   message?: {
     message_id: number;
     chat: { id: number };

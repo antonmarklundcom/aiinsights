@@ -11,7 +11,8 @@ import {
   pickPrimaryContentUrl,
   stripTrackingParams,
 } from "@/lib/urls";
-import { sendTelegramMessage, type TelegramUpdate } from "@/lib/telegram";
+import { answerCallbackQuery, sendTelegramMessage, type TelegramUpdate } from "@/lib/telegram";
+import { applyNudgeAction, parseNudgeCallback } from "@/lib/nudge";
 import { formatDuplicateReply, formatReply } from "@/lib/telegram-format";
 import { processItem } from "@/lib/process-item";
 import { isUniqueViolation } from "./pg-error";
@@ -39,6 +40,26 @@ export async function POST(req: NextRequest) {
   }
 
   const update: TelegramUpdate = await req.json();
+
+  // A tap on a weekly-nudge button (N1).
+  const callback = update.callback_query;
+  if (callback) {
+    const cbChat = callback.message?.chat.id;
+    const allowed = env.TELEGRAM_ALLOWED_CHAT_ID;
+    const parsed = parseNudgeCallback(callback.data);
+    if (!allowed || String(cbChat) !== allowed || !parsed) {
+      await answerCallbackQuery(callback.id);
+      return ok();
+    }
+    const { set, toast } = applyNudgeAction(parsed.action, new Date());
+    await db
+      .update(items)
+      .set({ ...set, updatedAt: new Date() })
+      .where(eq(items.id, parsed.id));
+    await answerCallbackQuery(callback.id, toast);
+    return ok();
+  }
+
   const message = update.message;
   if (!message) return ok();
 

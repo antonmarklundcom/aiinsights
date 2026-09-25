@@ -44,6 +44,14 @@ password-protected web dashboard.
    note, re-run the summary (even past the 3-attempt limit), mark it
    implemented, copy it as Markdown, or delete it.
 
+6. **Weekly nudge** — every Monday (09:00 Paraguay time) the bot sends three
+   saved-but-unimplemented items with **Do** / **Drop** buttons. Tap **Do** on
+   one; on Friday (17:00) it asks whether you did it: **Yes, done** marks it
+   implemented, **Next week** keeps it open, **Drop it** stops it being
+   offered. Items offered in the last two weeks are rotated out. Both runs are
+   Vercel crons on `/api/cron/nudge?kind=monday|friday` with the same
+   `CRON_SECRET`; run `npm run db:migrate` once for the three new columns.
+
 ## Stack
 
 - Next.js (App Router) on Vercel
