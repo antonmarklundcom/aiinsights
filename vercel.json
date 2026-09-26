@@ -4,6 +4,14 @@
     {
       "path": "/api/cron/reprocess",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/nudge?kind=monday",
+      "schedule": "0 12 * * 1"
+    },
+    {
+      "path": "/api/cron/nudge?kind=friday",
+      "schedule": "0 20 * * 5"
     }
   ]
 }
